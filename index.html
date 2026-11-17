@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- Ensure mobile optimization and prevent scaling -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Testing Camera</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            overflow: hidden;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            /* Prevent pull-to-refresh on mobile */
+            overscroll-behavior-y: none;
+        }
+
+        #crop-frame {
+            /* Strictly 9:16 aspect ratio */
+            aspect-ratio: 9 / 16;
+            height: 70vh;
+            max-width: 85vw;
+            /* Massive box shadow creates the darkened area outside the frame */
+            box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.65);
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            border-radius: 12px;
+            /* Corner markers */
+            position: relative;
+        }
+
+        /* Styling the capture button to look like a native camera button */
+        .capture-btn-outer {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            border: 4px solid #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            transition: transform 0.1s ease;
+        }
+        .capture-btn-outer:active {
+            transform: scale(0.95);
+        }
+        .capture-btn-inner {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background-color: #fff;
+            transition: background-color 0.1s ease;
+        }
+        .capture-btn-outer:active .capture-btn-inner {
+            background-color: #ddd;
+        }
+
+        /* Hide elements utility */
+        .hidden-view {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="text-white select-none">
+
+    <!-- Main Camera View -->
+    <main id="camera-view" class="relative w-full h-full flex flex-col items-center justify-center">
+        <!-- Live Video Feed -->
+        <!-- playsinline is crucial for iOS to prevent fullscreen native video player -->
+        <video id="camera-feed" class="absolute inset-0 w-full h-full object-cover" autoplay playsinline muted></video>
+
+        <!-- Overlay Container (Pointer events none so touches pass through if needed) -->
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10 overflow-hidden">
+            <!-- The 9:16 Frame -->
+            <div id="crop-frame">
+                <!-- Corner visual accents -->
+                <div class="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-white rounded-tl-lg -mt-1 -ml-1"></div>
+                <div class="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-white rounded-tr-lg -mt-1 -mr-1"></div>
+                <div class="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-white rounded-bl-lg -mb-1 -ml-1"></div>
+                <div class="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-white rounded-br-lg -mb-1 -mr-1"></div>
+                
+                <div class="absolute top-4 left-0 w-full text-center opacity-70 text-xs font-semibold tracking-wider text-white drop-shadow-md">
+                    TESTING FRAME
+                </div>
+            </div>
+        </div>
+
+        <!-- Camera Controls -->
+        <div class="absolute bottom-0 inset-x-0 h-32 flex items-center justify-center z-20 pb-6 bg-gradient-to-t from-black/80 to-transparent">
+            <button id="capture-btn" aria-label="Capture Photo" class="capture-btn-outer focus:outline-none">
+                <div class="capture-btn-inner"></div>
+            </button>
+        </div>
+
+        <!-- Initializing Indicator -->
+        <div id="loading-msg" class="absolute inset-0 bg-black flex items-center justify-center z-30 transition-opacity duration-300">
+            <div class="flex flex-col items-center gap-4">
+                <svg class="animate-spin h-8 w-8 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="text-sm font-medium">Accessing Camera...</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Photo Preview View -->
+    <section id="preview-view" class="hidden-view absolute inset-0 z-40 bg-black flex flex-col">
+        <!-- Header -->
+        <header class="h-16 flex items-center justify-center bg-zinc-900 border-b border-zinc-800">
+            <h1 class="text-lg font-semibold">Preview</h1>
+        </header>
+
+        <!-- Image Container -->
+        <div class="flex-1 overflow-hidden p-6 flex flex-col items-center justify-center">
+            <!-- Ensure preview also roughly respects the 9:16 visual container to look native -->
+            <div class="relative w-full h-full flex items-center justify-center shadow-2xl">
+                <img id="preview-img" class="max-w-full max-h-full object-contain rounded-lg border border-zinc-700 shadow-xl" alt="Captured screen" />
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="h-28 flex items-center justify-between px-8 pb-6 bg-gradient-to-t from-zinc-900 to-transparent">
+            <button id="retake-btn" class="px-6 py-3 rounded-full bg-zinc-800 text-white font-medium active:bg-zinc-700 transition-colors focus:outline-none">
+                Retake
+            </button>
+            <button id="save-btn" class="px-8 py-3 rounded-full bg-blue-600 text-white font-medium active:bg-blue-500 shadow-lg shadow-blue-900/50 transition-colors focus:outline-none flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+                Save JPG
+            </button>
+        </div>
+    </section>
+
+    <script>
+        // DOM Elements
+        const video = document.getElementById('camera-feed');
+        const cropFrame = document.getElementById('crop-frame');
+        const captureBtn = document.getElementById('capture-btn');
+        const retakeBtn = document.getElementById('retake-btn');
+        const saveBtn = document.getElementById('save-btn');
+        const previewImg = document.getElementById('preview-img');
+        
+        const cameraView = document.getElementById('camera-view');
+        const previewView = document.getElementById('preview-view');
+        const loadingMsg = document.getElementById('loading-msg');
+
+        let currentStream = null;
+        let capturedDataUrl = null;
+
+        // Initialize Application
+        async function initCamera() {
+            try {
+                // Request back camera, highest reasonable resolution
+                const constraints = {
+                    video: {
+                        facingMode: 'environment', // Rear camera priority
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    },
+                    audio: false
+                };
+
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = currentStream;
+                
+                // Once video starts playing, hide the loading screen
+                video.onloadeddata = () => {
+                    loadingMsg.style.opacity = '0';
+                    setTimeout(() => loadingMsg.classList.add('hidden-view'), 300);
+                };
+
+            } catch (err) {
+                console.error("Error accessing camera:", err);
+                loadingMsg.innerHTML = `
+                    <div class="text-center px-6">
+                        <p class="text-red-400 mb-2 font-bold">Camera Access Denied</p>
+                        <p class="text-sm text-zinc-300">Please grant camera permissions to use this tool, or try opening in a standard mobile browser (Safari/Chrome).</p>
+                        <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-white text-black rounded-full text-sm font-semibold">Reload</button>
+                    </div>
+                `;
+            }
+        }
+
+        // Mathematical calculation to crop the exact frame out of the object-fit video
+        function captureAndCrop() {
+            // Get bounding boxes of the visible elements
+            const frameRect = cropFrame.getBoundingClientRect();
+            const videoRect = video.getBoundingClientRect();
+
+            // Intrinsic video dimensions (actual raw camera resolution)
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+
+            // Element display dimensions on screen
+            const ew = videoRect.width;
+            const eh = videoRect.height;
+
+            // Because video is "object-fit: cover", it scales up to cover the element completely.
+            // The scale factor is the maximum of the width ratio or height ratio.
+            const scale = Math.max(ew / vw, eh / vh);
+
+            // Displayed dimensions of the scaled video (before clipping by the element boundaries)
+            const scaledVideoWidth = vw * scale;
+            const scaledVideoHeight = vh * scale;
+
+            // Calculate how much of the scaled video is cut off by the element boundaries
+            const offsetX = (scaledVideoWidth - ew) / 2;
+            const offsetY = (scaledVideoHeight - eh) / 2;
+
+            // Find the position of our transparent frame relative to the video element's top-left
+            const frameX = frameRect.left - videoRect.left;
+            const frameY = frameRect.top - videoRect.top;
+            const frameW = frameRect.width;
+            const frameH = frameRect.height;
+
+            // Map the screen coordinates of the frame to the scaled video coordinates
+            const mappedX = frameX + offsetX;
+            const mappedY = frameY + offsetY;
+
+            // Map the scaled coordinates back to the intrinsic raw video coordinates
+            const cropX = mappedX / scale;
+            const cropY = mappedY / scale;
+            const cropW = frameW / scale;
+            const cropH = frameH / scale;
+
+            // Create a canvas with the dimensions of the final cropped intrinsic image
+            const canvas = document.createElement('canvas');
+            canvas.width = cropW;
+            canvas.height = cropH;
+            const ctx = canvas.getContext('2d');
+
+            // Draw the exact sub-rectangle of the video onto the canvas
+            // sourceX, sourceY, sourceW, sourceH, destX, destY, destW, destH
+            ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+            // Export to high-quality JPG
+            return canvas.toDataURL('image/jpeg', 0.95);
+        }
+
+        // View Management
+        function showPreview() {
+            cameraView.classList.add('hidden-view');
+            previewView.classList.remove('hidden-view');
+            previewImg.src = capturedDataUrl;
+        }
+
+        function showCamera() {
+            previewView.classList.add('hidden-view');
+            cameraView.classList.remove('hidden-view');
+            capturedDataUrl = null;
+            previewImg.src = "";
+        }
+
+        // Event Listeners
+        captureBtn.addEventListener('click', () => {
+            if (!video.videoWidth) return; // Wait for video to be ready
+            
+            // Add a brief flash effect
+            const flash = document.createElement('div');
+            flash.className = 'absolute inset-0 bg-white z-50 pointer-events-none transition-opacity duration-300';
+            document.body.appendChild(flash);
+            
+            // Capture process
+            capturedDataUrl = captureAndCrop();
+            
+            // Fade out flash and show preview
+            setTimeout(() => {
+                flash.style.opacity = '0';
+                showPreview();
+                setTimeout(() => flash.remove(), 300);
+            }, 150);
+        });
+
+        retakeBtn.addEventListener('click', () => {
+            showCamera();
+        });
+
+        saveBtn.addEventListener('click', () => {
+            if (!capturedDataUrl) return;
+            
+            // Create automatic download link
+            const a = document.createElement('a');
+            a.href = capturedDataUrl;
+            
+            // Generate standard filename with timestamp
+            const date = new Date();
+            const timestamp = `${date.getFullYear()}${(date.getMonth()+1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}_${date.getHours().toString().padStart(2, '0')}${date.getMinutes().toString().padStart(2, '0')}${date.getSeconds().toString().padStart(2, '0')}`;
+            a.download = `Mobile_Test_${timestamp}.jpg`;
+            
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+
+        // Start everything on page load
+        window.onload = initCamera;
+
+    </script>
+</body>
+</html>
